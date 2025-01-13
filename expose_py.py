@@ -103,7 +103,7 @@ class ConsultMeteo(BaseHTTPRequestHandler):
             self.send_error(500, f'Erreur lors de la lecture du fichier de résultats: {str(e)}')
 
 if __name__ == '__main__':
-    server_address = ('127.0.0.1', 5001)
+    server_address = ('127.0.1.1', 5002)
     httpd = HTTPServer(server_address, ConsultMeteo)
     print(f'Serveur Python démarré sur http://{server_address[0]}:{server_address[1]}')
     try:
