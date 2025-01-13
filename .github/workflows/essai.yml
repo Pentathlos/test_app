@@ -1,0 +1,175 @@
+name: Weather App Workflow
+
+on:
+  push:
+    branches:
+      - master
+  pull_request:
+    branches:
+      - master
+
+jobs:
+  validate-frontend:
+    name: Validate Frontend Files
+    runs-on: windows-latest
+    steps:
+      - name: Checkout Code
+        uses: actions/checkout@v3
+
+      - name: Validate Input Form
+        shell: powershell
+        run: |
+          # Vérifier demo_py.html
+          if (-not (Test-Path "demo_py.html")) {
+            Write-Error "Error: demo_py.html is missing"
+            exit 1
+          }
+          $content = Get-Content "demo_py.html" -Raw
+          if (-not ($content -match '<form')) {
+            Write-Error "Error: Form element is missing in demo_py.html"
+            exit 1
+          }
+          if (-not ($content -match 'name="city"')) {
+            Write-Error "Error: Input field for city is missing in demo_py.html"
+            exit 1
+          }
+          if (-not ($content -match 'type="submit"')) {
+            Write-Error "Error: Submit button is missing in demo_py.html"
+            exit 1
+          }
+          Write-Host "Input form validation passed"
+
+      - name: Validate Response Page
+        shell: powershell
+        run: |
+          # Vérifier reponse.html
+          if (-not (Test-Path "reponse.html")) {
+            Write-Error "Error: reponse.html is missing"
+            exit 1
+          }
+          $content = Get-Content "reponse.html" -Raw
+          if (-not ($content -match '{{city}}')) {
+            Write-Error "Error: city parameter is missing in reponse.html"
+            exit 1
+          }
+          if (-not ($content -match '{{temperature}}')) {
+            Write-Error "Error: temperature parameter is missing in reponse.html"
+            exit 1
+          }
+          if (-not ($content -match '{{weather}}')) {
+            Write-Error "Error: weather parameter is missing in reponse.html"
+            exit 1
+          }
+          if (-not ($content -match '{{humidity}}')) {
+            Write-Error "Error: humidity parameter is missing in reponse.html"
+            exit 1
+          }
+          Write-Host "Response page validation passed"
+
+  test-server:
+    name: Test Python Server
+    needs: validate-frontend
+    runs-on: windows-latest
+    steps:
+      - name: Checkout Code
+        uses: actions/checkout@v3
+
+      - name: Set up Python
+        uses: actions/setup-python@v4
+        with:
+          python-version: "3.x"
+
+      - name: Install Dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install python-dotenv
+
+      - name: Set API_KEY directly in code
+        env:
+          API_KEY: "fc9a84b33a13593aca9630e7b38830d1"
+        run: |
+          echo "API_KEY=${API_KEY}" >> $GITHUB_ENV
+
+      - name: Test Server
+        shell: powershell
+        run: |
+          # Vérifier expose_py.py
+          if (-not (Test-Path "expose_py.py")) {
+            Write-Error "Error: expose_py.py is missing"
+            exit 1
+          }
+
+          # Démarrer le serveur
+          Start-Process python -ArgumentList "expose_py.py" -NoNewWindow
+          Start-Sleep -Seconds 15
+
+          # Test du serveur
+          try {
+            $response = Invoke-WebRequest -Uri "http://127.0.0.1:5001" -Method GET -Headers @{ "Authorization" = "Bearer $env:API_KEY" }
+            if ($response.StatusCode -eq 200) {
+              Write-Host "Server is running correctly"
+            }
+          }
+          catch {
+            Write-Error "Server test failed: $_"
+            exit 1
+          }
+          finally {
+            Stop-Process -Name "python" -Force -ErrorAction SilentlyContinue
+          }
+
+  test-functionality:
+    name: Test Weather Functionality
+    needs: test-server
+    runs-on: windows-latest
+    steps:
+      - name: Checkout Code
+        uses: actions/checkout@v3
+  
+      - name: Set up Python
+        uses: actions/setup-python@v4
+        with:
+          python-version: "3.x"
+  
+      - name: Install Dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install python-dotenv
+  
+      - name: Test Weather Request
+        shell: powershell
+        run: |
+          # Démarrer le serveur
+          Start-Process python -ArgumentList "expose_py.py" -NoNewWindow
+          Start-Sleep -Seconds 10
+
+          try {
+            # Test avec une ville dynamique
+            $formData = @{
+              city = 'Paris'
+            }
+            $response = Invoke-WebRequest -Uri "http://localhost:5001/submit" -Method POST -Body $formData -Headers @{ "Authorization" = "Bearer $env:API_KEY" }
+            if ($response.StatusCode -eq 200) {
+              Write-Host "Weather functionality test passed"
+            }
+          }
+          catch {
+            Write-Error "Weather functionality test failed: $_"
+            exit 1
+          }
+          finally {
+            Stop-Process -Name "python" -Force -ErrorAction SilentlyContinue
+          }
+
+  final-validation:
+    name: Final Validation
+    needs: [validate-frontend, test-server, test-functionality]
+    runs-on: windows-latest
+    steps:
+      - name: Summary
+        run: |
+          echo "=== Weather Application Validation ==="
+          echo "✓ Frontend Files (demo_py.html, reponse.html): Validated"
+          echo "✓ Python Server: Tested"
+          echo "✓ Weather Functionality: Verified"
+          echo "All tests completed successfully"
